@@ -1,22 +1,27 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
-import { useState } from "react";
 import axios from "axios";
 
 const MoodPlayer = ({ songs, setSongs }) => {
   const videoRef = useRef(null);
+  const audioRefs = useRef([]); // Refs to control each audio
   const [expression, setExpression] = useState("");
   const [isPlaying, setIsPlaying] = useState(null);
 
   const handlePlayPause = (idx) => {
-    if (isPlaying == idx) {
+    if (isPlaying === idx) {
+      audioRefs.current[idx].pause();
       setIsPlaying(null);
     } else {
+      if (isPlaying !== null && audioRefs.current[isPlaying]) {
+        audioRefs.current[isPlaying].pause();
+      }
+      audioRefs.current[idx].play();
       setIsPlaying(idx);
     }
   };
 
-  // Load the face-api models
+  // Load face-api models
   useEffect(() => {
     const loadModels = async () => {
       const MODEL_URL = "/models";
@@ -27,7 +32,7 @@ const MoodPlayer = ({ songs, setSongs }) => {
     loadModels().then(startVideo);
   }, []);
 
-  // Start video using native navigator API
+  // Start webcam
   const startVideo = () => {
     navigator.mediaDevices
       .getUserMedia({ video: {} })
@@ -39,8 +44,8 @@ const MoodPlayer = ({ songs, setSongs }) => {
       .catch((err) => console.error("Camera error:", err));
   };
 
-  // Handle video frame for expression detection
-  const handleVideoPlay = async function () {
+  // Handle video for face detection
+  const handleVideoPlay = async () => {
     if (videoRef.current) {
       const detections = await faceapi
         .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
@@ -48,29 +53,25 @@ const MoodPlayer = ({ songs, setSongs }) => {
 
       if (detections.length > 0) {
         const expressions = detections[0].expressions;
-
-        // Get the expression with the highest probability
         const maxExpression = Object.entries(expressions).reduce(
           (prev, current) => (prev[1] > current[1] ? prev : current)
         );
-
         setExpression(maxExpression[0]);
         axios
           .get(`http://localhost:3000/songs?mood=${maxExpression[0]}`)
           .then((res) => {
-            console.log(res);
             setSongs(res.data.songs);
+            setIsPlaying(null); // Stop any currently playing song
           });
       } else {
         setExpression("No face detected");
-        console.log("No face detected");
       }
     }
   };
 
   return (
     <div className="container mx-auto p-6 flex flex-col lg:flex-row gap-8 min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
-      {/* Face detection section */}
+      {/* Face Detection */}
       <div className="faceDetect flex-1 flex flex-col items-center backdrop-blur-lg bg-white/10 p-6 rounded-3xl shadow-xl border border-white/20 transition hover:scale-[1.01] duration-300">
         <div className="face w-full flex flex-col items-center gap-4">
           <video
@@ -91,7 +92,7 @@ const MoodPlayer = ({ songs, setSongs }) => {
         </button>
       </div>
 
-      {/* Song suggestion section */}
+      {/* Song Suggestions */}
       <div className="songSuggest flex-1 backdrop-blur-lg bg-white/10 p-6 rounded-3xl shadow-xl border border-white/20">
         <h1 className="text-3xl font-bold mb-6 text-white drop-shadow-lg">
           Recommended Songs
@@ -112,23 +113,46 @@ const MoodPlayer = ({ songs, setSongs }) => {
                 <h3 className="text-sm text-gray-200">{song.artist}</h3>
               </div>
               <div className="btn flex items-center gap-2">
-                {isPlaying === idx && (
-                  <audio
-                    src={song.audio}
-                    autoPlay={isPlaying == idx}
-                    style={{ display: "none" }}
-                  ></audio>
-                )}
-                <button
-                  className="text-4xl text-pink-400 hover:text-pink-300 transition duration-200"
-                  onClick={() => handlePlayPause(idx)}
-                >
-                  {isPlaying == idx ? (
-                    <i className="ri-pause-fill"></i>
-                  ) : (
-                    <i className="ri-play-circle-fill"></i>
-                  )}
-                </button>
+                <audio
+                  src={song.audio}
+                  ref={(el) => (audioRefs.current[idx] = el)}
+                  controls
+                  className="w-80"
+                  style={{display:"none"}}
+                />
+                 {/* ⏪ Rewind 10s */}
+  <button
+    className="text-2xl text-white hover:text-indigo-400 transition duration-200"
+    onClick={() => {
+      const audio = audioRefs.current[idx];
+      if (audio) audio.currentTime = Math.max(0, audio.currentTime - 10);
+    }}
+  >
+    <i className="ri-rewind-fill"></i>
+  </button>
+
+  {/* ▶️ / ⏸ Play / Pause */}
+  <button
+    className="text-4xl text-white hover:text-indigo-500 transition duration-200"
+    onClick={() => handlePlayPause(idx)}
+  >
+    {isPlaying === idx ? (
+      <i className="ri-pause-fill"></i>
+    ) : (
+      <i className="ri-play-circle-fill"></i>
+    )}
+  </button>
+
+  {/* ⏩ Forward 10s */}
+  <button
+    className="text-2xl text-white hover:text-indigo-400 transition duration-200"
+    onClick={() => {
+      const audio = audioRefs.current[idx];
+      if (audio) audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
+    }}
+  >
+    <i className="ri-speed-fill"></i>
+  </button>
               </div>
             </div>
           ))}
